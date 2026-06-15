@@ -160,7 +160,6 @@
     display: none;
     z-index: 10;
     overflow: hidden;
-    will-change: contents;
   }
 
   .name-token {
@@ -169,9 +168,14 @@
     font-weight: 900;
     color: #fff;
     pointer-events: none;
+    animation: glitchFade 0.3s forwards;
     white-space: nowrap;
-    will-change: opacity;
-    transition: opacity 0.25s ease;
+  }
+
+  @keyframes glitchFade {
+    0%   { opacity: 0; transform: skewX(10deg) scale(0.9); }
+    60%  { opacity: 1; transform: skewX(-3deg) scale(1.02); }
+    100% { opacity: 0.85; transform: skewX(0) scale(1); }
   }
 
   #scene-final {
@@ -349,11 +353,7 @@
   const video = document.getElementById('main-video');
   const enterScreen = document.getElementById('scene-enter');
 
-  let scene2Started = false;
-  let scene2Fallback;
-
   enterScreen.addEventListener('click', () => {
-    clearTimeout(scene2Fallback);
     enterScreen.classList.add('fade-out');
     setTimeout(() => {
       enterScreen.style.display = 'none';
@@ -362,8 +362,10 @@
     }, 800);
   });
 
+  let scene2Started = false;
+
   video.addEventListener('ended', startScene2);
-  scene2Fallback = setTimeout(startScene2, 31000);
+  setTimeout(startScene2, 31000);
 
   function startScene2() {
     if (scene2Started) return;
@@ -409,7 +411,6 @@
     s2.classList.add('fade-out');
     setTimeout(() => {
       s2.style.display = 'none';
-      document.getElementById('photos-container').innerHTML = '';
       const s3 = document.getElementById('scene-name');
       s3.style.display = 'flex';
       startVerification();
@@ -651,57 +652,44 @@
     tokens.sort(() => Math.random() - 0.5);
 
     const fontSizes = [10, 11, 12, 13, 14, 15, 17, 19, 22, 26];
-
-    // Medir texto con canvas en lugar de DOM reflow
-    const measCanvas = document.createElement('canvas');
-    const measCtx = measCanvas.getContext('2d');
-
-    function measureText(text, fontSize) {
-      measCtx.font = `900 ${fontSize}px "Courier New", monospace`;
-      return { w: Math.ceil(measCtx.measureText(text).width) + 2, h: fontSize + 4 };
-    }
-
-    // Pre-calcular posiciones de todos los tokens
-    const tokenData = tokens.map(text => {
-      const isReal = ['nombre:','ciudad:','año','instagram:','edad','usuario:','ubicación:'].some(k => text.startsWith(k));
-      const fs = fontSizes[Math.floor(Math.random() * fontSizes.length)];
-      const { w, h } = measureText(text, fs);
-      const maxLeft = Math.max(window.innerWidth - w - 4, 0);
-      const maxTop  = Math.max(window.innerHeight - h - 4, 0);
-      return {
-        text,
-        isReal,
-        fs,
-        left: Math.random() * maxLeft,
-        top:  Math.random() * maxTop,
-        opacity: 0.4 + Math.random() * 0.6,
-        color: isReal ? '#fff' : (Math.random() < 0.08 ? '#ff0033' : 'rgba(255,255,255,0.5)'),
-      };
-    });
-
     let tokenCount = 0;
-    let lastTime = 0;
-    const interval = 200; // ms entre tokens
 
-    function addToken(ts) {
-      if (tokenCount >= tokenData.length) {
+    function addToken() {
+      if (tokenCount >= tokens.length) {
+        clearInterval(satInterval);
         setTimeout(goToScene5, 3500);
         return;
       }
-      if (ts - lastTime >= interval) {
-        lastTime = ts;
-        const d = tokenData[tokenCount];
-        const span = document.createElement('span');
-        span.className = 'name-token';
-        span.textContent = d.text;
-        span.style.cssText = `font-size:${d.fs}px;left:${d.left}px;top:${d.top}px;opacity:${d.opacity};color:${d.color};${d.isReal ? 'font-weight:900;' : ''}`;
-        s4.appendChild(span);
-        tokenCount++;
-      }
-      requestAnimationFrame(addToken);
+      const text = tokens[tokenCount];
+      const isReal = ['nombre:','ciudad:','año','instagram:','edad','usuario:','ubicación:'].some(k => text.startsWith(k));
+
+      const span = document.createElement('span');
+      span.classList.add('name-token');
+      span.textContent = text;
+      const fs = fontSizes[Math.floor(Math.random() * fontSizes.length)];
+      span.style.fontSize = fs + 'px';
+      span.style.opacity = '0';
+      span.style.left = '0px';
+      span.style.top = '0px';
+      span.style.color = isReal ? '#fff' : (Math.random() < 0.08 ? '#ff0033' : 'rgba(255,255,255,0.5)');
+      if (isReal) span.style.fontWeight = '900';
+
+      // Insertar invisible para medir
+      s4.appendChild(span);
+      const w = span.offsetWidth;
+      const h = span.offsetHeight;
+
+      const maxLeft = Math.max(window.innerWidth - w - 4, 0);
+      const maxTop  = Math.max(window.innerHeight - h - 4, 0);
+      span.style.left    = Math.random() * maxLeft + 'px';
+      span.style.top     = Math.random() * maxTop  + 'px';
+      span.style.opacity = (0.4 + Math.random() * 0.6).toString();
+
+      tokenCount++;
     }
 
-    requestAnimationFrame(addToken);
+    const satInterval = setInterval(addToken, 220);
+    addToken();
   }
 
   function startFinalGlitch() {
@@ -712,6 +700,12 @@
     const corruptChars = '▓░▒█■□▪◆!@#%&*?/\\|<>{}[]~^';
 
     text.setAttribute('data-text', original);
+
+    // Pre-cargar el audio desde el inicio para que esté listo al instante
+    const glitchSnd = new Audio('glitch.mp3');
+    glitchSnd.loop = true;
+    glitchSnd.volume = 0.8;
+    glitchSnd.load();
 
     const errorLines = [
       'writing to disk...',
@@ -737,6 +731,7 @@
         }
         if (errorLines[i] === 'Profile saved.') {
           errorMsg.innerHTML = 'Profile saved.&nbsp;<span id="cursor-blink">_</span>';
+          glitchSnd.play().catch(() => {});
           i++;
           return;
         }
@@ -828,11 +823,6 @@
       s4.style.display = 'none';
       const s5 = document.getElementById('scene-final');
       s5.style.display = 'flex';
-      // Arrancar el sonido inmediatamente al entrar a la escena final
-      const glitchSnd = new Audio('glitch.mp3');
-      glitchSnd.loop = true;
-      glitchSnd.volume = 0.8;
-      glitchSnd.play().catch(() => {});
       setTimeout(startFinalGlitch, 500);
     }, 800);
   }
